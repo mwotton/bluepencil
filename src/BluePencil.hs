@@ -1,5 +1,5 @@
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE RecordWildCards  #-}
 
 -- | This module is intended to be used as a qualified import.
 
@@ -10,8 +10,6 @@ import           Data.Aeson
 import qualified Data.BufferBuilder            as BB
 import qualified Data.ByteString               as BS
 import qualified Data.IntervalMap.FingerTree   as DIF
-import qualified Data.IntervalSet              as IS
-import qualified Data.IntervalMap.Strict as IMS
 import           Data.List                     (partition, sort, sortBy)
 import qualified Data.List.NonEmpty            as NE
 import           Data.Map                      (Map)
@@ -19,6 +17,8 @@ import qualified Data.Map                      as M
 import           Data.MonoTraversable          (ofoldlM, omapM_)
 import           Data.Ord                      (comparing)
 import           Data.Semigroup
+import           Data.Set                      (Set)
+import qualified Data.Set                      as Set
 import           Data.Text                     (Text)
 import qualified Data.Text                     as T
 import qualified Data.Text.Encoding            as TE
@@ -299,26 +299,31 @@ splitXs = splitOverlaps isrA
 -- [] :: [Natural]
 
 
-consolidate :: [Natural] -> [(Natural,Natural)]
-consolidate = undefined
+
+consolidate [] = []
+consolidate (x:xs) = let (hi,lo,rest) = partitionAscending x xs
+                     in (hi,lo):consolidate rest
+
+
+partitionAscending n rest = go n n rest
+  where go lo current [] = (lo,current,[])
+        go lo current (x:xs)
+          | x == current+1 = go lo x xs
+          | otherwise = (lo,current,x:xs)
 
 fillGaps :: Natural -> [StyleRangeAbsolute] -> [StyleRangeAbsolute]
-fillGaps _ [] = []
-fillGaps endIndex xs = map mkPlain $ consolidate remaining
+fillGaps endIndex xs = sortBy sraCompare $ xs <> map mkPlain (consolidate $ mirror endIndex $ map getInterval xs)
 
-  where remaining =
-          IS.toAscList $
-          IS.difference
-            (IS.fromList [0..endIndex])
-            (IS.unions $ map getInterval xs)
+mirror endIndex xs =
+  Set.toAscList $
+  Set.difference
+    (Set.fromList [0..endIndex])
+    (Set.unions xs)
 
-getInterval :: StyleRangeAbsolute -> IS.IntervalSet Natural
+getInterval :: StyleRangeAbsolute -> Set Natural
 getInterval sta =
-  fl ([(sraStart sta) .. (sraStop sta)])
-  where -- fl :: IS.Interval Natural a =>
-        fl :: IS.Interval (IMS.Interval Natural) Natural =>
-              [Natural] -> IS.IntervalSet Natural
-        fl = IS.fromList
+  Set.fromList ([(sraStart sta) .. (sraStop sta - 1)])
+
 mkPlain (lo, hi) =
   StyleRangeAbsolute { sraStart = lo
                      , sraStop = hi
